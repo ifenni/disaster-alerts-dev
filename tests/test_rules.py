@@ -1,12 +1,11 @@
-# tests/test_rules.py
-import pytest
-
 from disaster_alerts.rules import filter_events
-from disaster_alerts.settings import Thresholds, EarthquakeThresholds, WeatherThresholds
+from disaster_alerts.settings import EarthquakeThresholds, Thresholds, WeatherThresholds
 
 
 def test_earthquake_threshold_min_mag():
-    thresholds = Thresholds(earthquake=EarthquakeThresholds(min_magnitude=4.5, max_depth_km=700))
+    thresholds = Thresholds(
+        earthquake=EarthquakeThresholds(min_magnitude=4.5, max_depth_km=700)
+    )
     aoi = None
 
     events = [
@@ -30,7 +29,9 @@ def test_earthquake_threshold_min_mag():
 
 
 def test_earthquake_max_depth():
-    thresholds = Thresholds(earthquake=EarthquakeThresholds(min_magnitude=0.0, max_depth_km=50))
+    thresholds = Thresholds(
+        earthquake=EarthquakeThresholds(min_magnitude=0.0, max_depth_km=50)
+    )
     aoi = None
 
     events = [
@@ -54,14 +55,19 @@ def test_earthquake_max_depth():
 
 def test_weather_thresholds_permissive_when_values_missing():
     # If weather values are absent, rules remain permissive (do not exclude)
-    thresholds = Thresholds(weather=WeatherThresholds(wind_gust_mps=20, rainfall_mm_hr=10))
+    thresholds = Thresholds(
+        weather=WeatherThresholds(wind_gust_mps=20, rainfall_mm_hr=10)
+    )
     aoi = None
 
     events = [
         {
             "id": "nws-no-numerics",
             "provider": "nws",
-            "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]},
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+            },
             "properties": {"event": "Severe Thunderstorm Warning"},
         }
     ]
@@ -100,9 +106,7 @@ def test_aoi_missing_geometry_kept():
     thresholds = Thresholds()
     aoi = {
         "type": "Polygon",
-        "coordinates": [
-            [[-122, 34], [-118, 34], [-118, 36], [-122, 36], [-122, 34]]
-        ],
+        "coordinates": [[[-122, 34], [-118, 34], [-118, 36], [-122, 36], [-122, 34]]],
     }
 
     no_geom = {

@@ -43,9 +43,7 @@ def _load_dotenv(dotenv_path: Path) -> None:
 
 _ENV_VAR_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
-_EMAIL_RE = re.compile(
-    r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"
-)
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 
 
 def _env_expand(value: Any) -> Any:

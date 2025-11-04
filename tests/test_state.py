@@ -1,14 +1,15 @@
-# tests/test_state.py
-from pathlib import Path
 import json
+from pathlib import Path
 
 from disaster_alerts.state import State
+
 
 def test_state_load_empty(tmp_path: Path):
     state_path = tmp_path / "state.json"
     s = State.load(state_path)
     assert s.providers == {}
     assert s.path == state_path
+
 
 def test_is_new_and_update_with(tmp_path: Path):
     state_path = tmp_path / "state.json"
@@ -31,6 +32,7 @@ def test_is_new_and_update_with(tmp_path: Path):
     assert s.providers["usgs"].last_updated == "2025-01-01T00:05:00Z"
     assert s.providers["nws"].last_updated == "2025-01-01T01:00:00Z"
 
+
 def test_save_and_reload(tmp_path: Path):
     state_path = tmp_path / "state.json"
     s = State.load(state_path)
@@ -48,6 +50,7 @@ def test_save_and_reload(tmp_path: Path):
     s2 = State.load(state_path)
     assert not s2.is_new(ev)
     assert s2.providers["nws"].last_updated == "2025-02-02T02:02:02Z"
+
 
 def test_lru_limit(tmp_path: Path, monkeypatch):
     # Force a small LRU for test

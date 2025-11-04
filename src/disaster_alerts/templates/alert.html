@@ -1,0 +1,65 @@
+<!-- src/disaster_alerts/templates/alert.html -->
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>{{ subject }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body style="margin:0;padding:0;background:#f6f7fb;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f7fb;padding:20px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="680" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);overflow:hidden;">
+            <!-- Header -->
+            <tr>
+              <td style="padding:16px 20px;background:#111827;color:#ffffff;">
+                <h1 style="margin:0;font-size:18px;line-height:1.4;">disaster-alerts</h1>
+                <p style="margin:4px 0 0 0;font-size:12px;opacity:0.85;">
+                  Route: <strong>{{ group }}</strong> • Generated at <strong>{{ generated_at }}</strong> (UTC)
+                </p>
+              </td>
+            </tr>
+
+            <!-- Subject -->
+            <tr>
+              <td style="padding:16px 20px;">
+                <h2 style="margin:0 0 8px 0;font-size:16px;color:#111827;">{{ subject }}</h2>
+                <p style="margin:0;font-size:13px;color:#6b7280;">
+                  Below is a summary table for this notification window.
+                </p>
+              </td>
+            </tr>
+
+            <!-- Body (injected HTML table) -->
+            <tr>
+              <td style="padding:8px 20px 20px 20px;">
+                <!-- {{ body }} is expected to be an HTML table (already escaped/constructed) -->
+                <div style="overflow-x:auto;">
+                  {{ body }}
+                </div>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="padding:14px 20px;background:#f9fafb;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px;">
+                <p style="margin:0;">
+                  You’re receiving this because your address is in the “{{ group }}” recipient group.
+                </p>
+                <p style="margin:4px 0 0 0;">
+                  Tip: To adjust thresholds or routing, edit <code>config/thresholds.yaml</code> or <code>config/recipients.yaml</code>.
+                </p>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Small print -->
+          <p style="margin:10px 0 0 0;font-size:11px;color:#9ca3af;">
+            Sent by disaster-alerts • This is an automated message; replies are not monitored.
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

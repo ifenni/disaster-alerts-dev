@@ -1,0 +1,18 @@
+# config/recipients.yaml
+# Routing groups → recipient email lists.
+# Events set a `routing_key` (e.g., "default", "severe", "ops"); the pipeline
+# sends one email per group to the addresses listed here.
+
+default:
+  - emre.havazli@jpl.nasa.gov
+
+# severe:
+#   - ops-team@example.com
+#   - incident-manager@example.com
+
+# ops:
+#   - noc@example.com
+
+# You can reference environment variables (expanded at load time), e.g.:
+# oncall:
+#   - ${ONCALL_EMAIL}

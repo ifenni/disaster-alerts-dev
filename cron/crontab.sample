@@ -1,0 +1,40 @@
+# cron/crontab.sample
+# Example crontab entries for disaster-alerts
+#
+# Notes:
+# - Replace /path/to/disaster-alerts with the absolute path to your repo.
+# - These entries call scripts/run.sh which loads .env, ensures dirs, and runs the
+#   correct Python via `conda run -n disaster-alerts`.
+# - Redirect stdout/stderr to logs/cron.log. Consider logrotate for rotation.
+#
+# Helpful:
+#   crontab -e         # edit your crontab
+#   crontab -l         # list current entries
+#   journalctl -u cron # on systems using systemd-cron
+
+# ┌──────── minute (0 - 59)
+# │ ┌────── hour (0 - 23)
+# │ │ ┌──── day of month (1 - 31)
+# │ │ │ ┌── month (1 - 12)
+# │ │ │ │ ┌─ day of week (0 - 6) (Sunday=0 or 7)
+# │ │ │ │ │
+# * * * * *  command to execute
+
+# Every 10 minutes (typical)
+*/10 * * * * cd /path/to/disaster-alerts && ./scripts/run.sh >> logs/cron.log 2>&1
+
+# Every 5 minutes (more frequent polling)
+# */5 * * * * cd /path/to/disaster-alerts && ./scripts/run.sh >> logs/cron.log 2>&1
+
+# Hourly at minute 3 (lightweight polling)
+# 3 * * * * cd /path/to/disaster-alerts && ./scripts/run.sh >> logs/cron.log 2>&1
+
+# Dry-run once a day at 07:15 (no emails; for sanity checks)
+# 15 7 * * * cd /path/to/disaster-alerts && ./scripts/run.sh --dry-run >> logs/cron.log 2>&1
+
+# Print effective settings (redacted) at 06:00 on Mondays
+# 0 6 * * 1 cd /path/to/disaster-alerts && ./scripts/run.sh --print-settings >> logs/cron.log 2>&1
+
+# If your cron does not inherit environment (e.g., conda not on PATH), you can
+# explicitly source your shell rc and conda hook, then run. Example:
+# */10 * * * * bash -lc 'source ~/.bashrc && cd /path/to/disaster-alerts && ./scripts/run.sh >> logs/cron.log 2>&1'

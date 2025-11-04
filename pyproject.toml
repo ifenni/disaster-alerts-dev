@@ -1,0 +1,64 @@
+# pyproject.toml
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "disaster-alerts"
+version = "0.1.0"
+description = "Cron-friendly NWS/USGS alerts with email notifications via yagmail."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }  # Put Apache-2.0 text in LICENSE
+authors = [
+  { name = "Your Name", email = "you@example.com" }
+]
+keywords = ["alerts", "NWS", "USGS", "email", "cron", "disaster"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Topic :: Internet",
+  "Topic :: Communications :: Email",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+# Minimal runtime deps (Conda env also includes these)
+dependencies = [
+  "pydantic>=2.4",
+  "PyYAML>=6.0",
+  "requests>=2.31",
+  "yagmail>=0.15.293",
+]
+
+[project.urls]
+Homepage = "https://example.invalid/disaster-alerts"
+Repository = "https://example.invalid/disaster-alerts.git"
+Issues = "https://example.invalid/disaster-alerts/issues"
+
+# Optional: installable CLI entry point `disaster-alerts`
+[project.scripts]
+disaster-alerts = "disaster_alerts.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["disaster_alerts*"]
+
+# ---- Dev tooling (optional) ----
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = []

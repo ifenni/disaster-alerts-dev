@@ -1,0 +1,15 @@
+# environment.yml
+name: disaster-alerts
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.11
+  - pydantic
+  - pyyaml
+  - requests
+  - pytest
+  - pip
+  - pip:
+      - yagmail
+      # optional dev tools (uncomment if you want them via pip)
+      # - ruff>=0.6

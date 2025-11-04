@@ -1,0 +1,24 @@
+# config/app.yaml
+# Core application settings (no scheduling here — use cron/)
+# Log level: CRITICAL | ERROR | WARNING | INFO | DEBUG
+log_level: INFO
+
+# Area of Interest (GeoJSON) — set to null to include all events.
+# Example Polygon (a simple box around Southern California):
+# aoi:
+#   type: Polygon
+#   coordinates:
+#     - [[-124.5, 32.0], [-114.0, 32.0], [-114.0, 37.5], [-124.5, 37.5], [-124.5, 32.0]]
+aoi: null
+
+# Enable/disable data sources
+providers:
+  nws: true    # National Weather Service alerts
+  usgs: true   # USGS earthquakes
+
+routing:
+  force_group: default      # <-- NEW: send *all* events to this group
+  display_timezone: America/Los_Angeles
+  fallback_to_default: true # keep or drop; not used once force_group is set
+  # merge: {}                 # unused
+  # drop_groups: []           # unused

@@ -18,7 +18,3 @@ providers:
 
 routing:
   force_group: default      # <-- NEW: send *all* events to this group
-  display_timezone: America/Los_Angeles
-  fallback_to_default: true # keep or drop; not used once force_group is set
-  # merge: {}                 # unused
-  # drop_groups: []           # unused

@@ -12,7 +12,3 @@ default:
 
 # ops:
 #   - noc@example.com
-
-# You can reference environment variables (expanded at load time), e.g.:
-# oncall:
-#   - ${ONCALL_EMAIL}

@@ -1,29 +1,11 @@
-# config/thresholds.yaml
-# Per-hazard thresholds. Any field left null/omitted is not enforced.
-# Units:
-#   - earthquake.depth: kilometers
-#   - weather.wind_gust_mps: meters/second
-#   - weather.rainfall_mm_hr: millimeters/hour
-
-global:
-  min_severity: Severe
-
 earthquake:
-  # Notify if magnitude >= this value (0–10). Example: 4.5 for felt events.
-  min_magnitude: 4.5
-  # Ignore quakes deeper than this (km). Set to 700 for essentially “no cap”.
+  min_magnitude: 4.0
   max_depth_km: 700
 
 weather:
-  # Notify when reported/parsed wind gusts meet/exceed this value (m/s).
-  # (NWS alerts often lack numeric gusts; if missing, this check is skipped.)
-  # wind_gust_mps: 20
-  # Notify when reported/parsed rainfall rate meets/exceeds this value (mm/hr).
-  # rainfall_mm_hr: 25
-
-  include_events:            # only pass if any pattern matches (case-insensitive)
-    # - "Severe Thunderstorm Warning"
-    - "Flood"
-  exclude_events:            # drop if any pattern matches (case-insensitive)
-    - "Special Weather Statement"
-    - "Hazardous Weather Outlook"
+  include_events:
+    - Flood Warning
+    - Hurricane
+  exclude_events:
+    - Special Weather Statement
+    # - Hazardous Weather Outlook

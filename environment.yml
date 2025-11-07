@@ -11,5 +11,3 @@ dependencies:
   - pip
   - pip:
       - yagmail
-      # optional dev tools (uncomment if you want them via pip)
-      # - ruff>=0.6

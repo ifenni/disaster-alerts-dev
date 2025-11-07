@@ -17,4 +17,4 @@ providers:
   usgs: true   # USGS earthquakes
 
 routing:
-  force_group: default      # <-- NEW: send *all* events to this group
+  force_group: default      # send *all* events to this group

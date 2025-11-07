@@ -4,7 +4,7 @@
 # sends one email per group to the addresses listed here.
 
 default:
-  - emre.havazli@jpl.nasa.gov
+  - you@example.com
 
 # severe:
 #   - ops-team@example.com

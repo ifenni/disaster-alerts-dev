@@ -73,7 +73,7 @@ YAGMAIL_APP_PASSWORD=app_password_or_token
 
 Edit the YAML files under `config/`:
 
-- `app.yaml` – enable/disable **nws**, **usgs**, set `AOI`, email routing
+- `app.yaml` – enable/disable **NWS**, **USGS**, set email routing, `AOI`
 - `thresholds.yaml` – e.g., USGS minimum magnitude, NWS event types to include
 - `recipients.yaml` – recipient groups and email addresses
 - `nws_events_list.json` - list of all events available via NWS alerts
@@ -115,7 +115,7 @@ Tips:
 ## Configuration reference
 
 ### USGS
-- Typical filters: `min_magnitude`, `time_window`, `aoi`
+- Typical filters: `min_magnitude`, `max_depth_km`
 - Normalized event fields include: `id`, `title`, `magnitude`, `depth_km`, `coordinates`, `updated`, `link`
 
 ### NWS

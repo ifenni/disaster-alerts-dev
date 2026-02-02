@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 from . import email as _email
 from . import rules as _rules
+from . import plot_html_map as _plot_html_map
 from .providers import fetch_from_enabled as _fetch_from_enabled
 from .settings import Settings, Thresholds
 from .state import State as _State
@@ -70,29 +71,108 @@ def _only_new(events: List[Event], state: _State) -> List[Event]:
 
 # ------------------------ routing & email ------------------------
 
-
 def _group_by_routing_key(
-    events: Iterable[Event], settings: Settings
+    events: Iterable[Event],
+    settings: Settings
 ) -> Dict[str, List[Event]]:
     """
-    Apply routing:
-      - force_group: send everything to this group
-      - drop_groups: remove listed groups entirely
+    Group events by routing key, applying routing rules:
+      - force_group: override all events (if meaningful)
+      - drop_groups: skip events in listed groups
       - merge: remap source->target groups
     """
+
     cfg = settings.app.routing
-    drop = set(cfg.drop_groups or [])
+    drop_groups = set(cfg.drop_groups or [])
+    merge_map = cfg.merge or {}
+    force_group = cfg.force_group.strip() if cfg.force_group else None
     groups: Dict[str, List[Event]] = defaultdict(list)
 
     for e in events:
-        key = (
-            cfg.force_group or str(e.get("routing_key", "default")).strip() or "default"
-        )
-        if key in drop:
+        raw_key = e.get("routing_key")
+
+        # -----------------------------
+        # Determine base key
+        # -----------------------------
+        if force_group and force_group.lower() != "default":
+            key = force_group
+        elif isinstance(raw_key, str) and raw_key.strip():
+            key = raw_key.strip()
+        else:
+            key = "default"
+
+        # -----------------------------
+        # Skip dropped groups
+        # -----------------------------
+        if key in drop_groups:
             continue
-        if not cfg.force_group and key in (cfg.merge or {}):
-            key = cfg.merge[key] or key
+
+        # -----------------------------
+        # Apply merge rules (only if not forced)
+        # -----------------------------
+        if not (force_group and force_group.lower() != "default"):
+            key = merge_map.get(key, key)
+
+        # -----------------------------
+        # Append to group
+        # -----------------------------
         groups[key].append(e)
+
+    return groups
+
+
+def _group_by_event_type(
+    events: Iterable[Event],
+    settings: Settings
+) -> Dict[str, List[Event]]:
+    """
+    Group events by e['properties']['event'], applying routing rules:
+      - force_group: override all events (if meaningful)
+      - drop_groups: skip events in listed groups
+      - merge: remap source->target groups
+    """
+
+    cfg = settings.app.routing
+    drop_groups = set(cfg.drop_groups or [])
+    merge_map = cfg.merge or {}
+    force_group = cfg.force_group.strip() if cfg.force_group else None
+    groups: Dict[str, List[Event]] = defaultdict(list)
+
+    for e in events:
+        # -----------------------------
+        # Extract event type from properties
+        # -----------------------------
+        raw_event = None
+        if "properties" in e and isinstance(e["properties"], dict):
+            raw_event = e["properties"].get("event")
+
+        # -----------------------------
+        # Determine base key
+        # -----------------------------
+        if force_group and force_group.lower() != "default":
+            key = force_group
+        elif isinstance(raw_event, str) and raw_event.strip():
+            key = raw_event.strip()
+        else:
+            key = "default"
+
+        # -----------------------------
+        # Skip dropped groups
+        # -----------------------------
+        if key in drop_groups:
+            continue
+
+        # -----------------------------
+        # Apply merge rules (only if not forced)
+        # -----------------------------
+        if not (force_group and force_group.lower() != "default"):
+            key = merge_map.get(key, key)
+
+        # -----------------------------
+        # Append to group
+        # -----------------------------
+        groups[key].append(e)
+
     return groups
 
 
@@ -172,20 +252,33 @@ def run(settings: Settings) -> int:
         log.info("All events filtered out by rules.")
         return 0
 
-    # 3) dedup (do not update state yet—only after successful sends)
+    # 3) generate html map of events if enabled
+    if not (settings.app.no_html):
+        try:
+            events = _plot_html_map._add_aoi_to_events(
+                events, settings.paths.data_dir)
+            grouped_for_map = _group_by_event_type(events, settings)
+            _plot_html_map._generate_events_html_map(
+                settings,
+                grouped_for_map,
+                settings.paths.data_dir)
+        except Exception as e:
+            log.error("Failed to generate events HTML map: %s", e)
+
+    # 4) dedup (do not update state yet—only after successful sends)
     state = _State.load(settings.paths.state_file)
     events = _only_new(events, state)
     if not events:
         log.info("No new events after deduplication.")
         return 0
 
-    # 4) route
+    # 5) route
     grouped = _group_by_routing_key(events, settings)
     if not grouped:
         log.info("No routable groups after routing rules.")
         return 0
 
-    # 5) email
+    # 6) email
     try:
         groups_sent, events_notified, sent_events = _dispatch_emails(settings, grouped)
     except RuntimeError as e:

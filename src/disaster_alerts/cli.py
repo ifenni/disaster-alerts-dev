@@ -52,6 +52,12 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
         action="store_true",
         help="Print version and exit.",
     )
+    p.add_argument(
+        "--no-html",
+        action="store_true",
+        default=False,
+        help="Generate an html with geometries of events AOIs.",
+    )
     return p.parse_args(argv)
 
 
@@ -119,6 +125,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"[config] {e}", file=sys.stderr)
         return 1
 
+    settings.app.no_html = False
+    if ns.no_html:
+        settings.app.no_html = True
     if ns.print_settings:
         data = _redact(_as_dict(settings))
         print(json.dumps(data, indent=2, ensure_ascii=False))

@@ -160,6 +160,10 @@ class AppConfig(BaseModel):
     )
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
+    no_html: bool = Field(
+        default=False,
+        description="Generate an HTML file with geometries of events AOIs",
+    )
 
     @field_validator("log_level")
     @classmethod

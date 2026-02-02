@@ -6,6 +6,7 @@ weather:
   include_events:
     - Flood Warning
     - Hurricane
+    - Storm Warning
   exclude_events:
     - Special Weather Statement
     # - Hazardous Weather Outlook

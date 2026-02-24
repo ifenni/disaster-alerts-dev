@@ -2,13 +2,15 @@
 name: disaster-alerts
 channels:
   - conda-forge
+channel_priority: strict
 dependencies:
   - python>=3.11
+  - flask
   - pydantic
   - pyyaml
   - requests
   - pytest
-  - shapely 
+  - shapely
   - folium
   - pip
   - pip:

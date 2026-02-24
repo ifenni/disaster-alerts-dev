@@ -38,3 +38,6 @@
 # If your cron does not inherit environment (e.g., conda not on PATH), you can
 # explicitly source your shell rc and conda hook, then run. Example:
 # */10 * * * * bash -lc 'source ~/.bashrc && cd /path/to/disaster-alerts && ./scripts/run.sh >> logs/cron.log 2>&1'
+
+# The cron job used in the context of the Flask web app
+*/10 * * * * /bin/bash -lc 'cd /home/ifenni/disaster-alerts-dev && conda activate disaster-alerts && ./scripts/run.sh >> logs/cron.log 2>&1'

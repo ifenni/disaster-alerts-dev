@@ -9,6 +9,7 @@ dependencies:
   - pydantic
   - pyyaml
   - requests
+  - geopandas
   - pytest
   - shapely
   - folium

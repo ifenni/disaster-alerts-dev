@@ -5,8 +5,17 @@ earthquake:
 weather:
   include_events:
     - Flood Warning
-    - Hurricane
+    - Coastal Flood Warning
+    - Flash Flood Warning
+    - Lakeshore Flood Warning
+    - Hurricane Warning
+    - Hurricane Force Wind Warning
     - Storm Warning
+    - Winter Storm Warning
+    - Dust Storm Warning
+    - Ice Storm Warning
+    - Tropical Storm Warning
+    - Severe Thunderstorm Warning
   exclude_events:
     - Special Weather Statement
     # - Hazardous Weather Outlook

@@ -6,46 +6,22 @@ Plot interactive HTML map for the activated events.
 
 from __future__ import annotations
 
-# import argparse
-# import shapely
-# import logging
-# import os
-# import re
-# import xml.etree.ElementTree as ET
-# from datetime import datetime, timezone
-# from pathlib import Path
-# from typing import List, Optional, Tuple, Union
-# from urllib.parse import urljoin
-# from shapely.geometry import shape, Polygon
-# from shapely import LinearRing, Point
-# from lxml import etree
-# from bs4 import BeautifulSoup
-# import geopandas as gpd
-
-# from bs4 import BeautifulSoup
-# from lxml import etree
-
-# from timezonefinder import TimezoneFinder
-# from zoneinfo import ZoneInfo
-
-
-import html
-import logging
-import re
+import colorsys
+import hashlib
 import json
-import requests
-import folium
-import itertools
-from folium.features import GeoJson
+import logging
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
-from zoneinfo import ZoneInfo
-from shapely import LinearRing, Point, Polygon, wkt
-from shapely.geometry import shape, box
-
-from .providers.common import get_json
-from .settings import Settings
+from typing import Any, Dict, Iterable, List
 from urllib.parse import urlparse
+
+import folium
+import geopandas as gpd
+import requests
+from folium.features import GeoJson
+from shapely import Point, wkt
+from shapely.geometry import box, shape
+
+from .settings import Settings
 
 Event = Dict[str, Any]
 log = logging.getLogger(__name__)
@@ -54,10 +30,60 @@ log = logging.getLogger(__name__)
 # generate and save an intercative HTML map
 # -----------------------------------------------------------------------------
 
+FAMILY_HUES = {
+    "flood": 210 / 360,  # blue
+    "hurricane": 120 / 360,  # green
+    "storm": 10 / 360,  # red/orange
+    "thunderstorm": 270 / 360,  # purple
+}
+
 
 def _is_url(s: str) -> bool:
     parsed = urlparse(s)
     return parsed.scheme in ("http", "https")
+
+
+def _detect_family(event_type: str) -> str:
+    s = event_type.lower()
+    if "flood" in s:
+        return "flood"
+    if "hurricane" in s:
+        return "hurricane"
+    if "thunderstorm" in s:
+        return "thunderstorm"
+    # keep this order otherwise thunderstorm events
+    # will be categorized as storm
+    if "storm" in s:
+        return "storm"
+    return "storm"
+
+
+def _color_from_event_type(event_type: str) -> str:
+    family = _detect_family(event_type)
+    base_hue = FAMILY_HUES[family]
+
+    hash_hex = hashlib.md5(event_type.encode()).hexdigest()
+
+    # Use more hash bits for stronger variation
+    h_variation = int(hash_hex[:2], 16) / 255.0  # 0–1
+    l_variation = int(hash_hex[2:4], 16) / 255.0  # 0–1
+
+    # --- HUE variation (±15 degrees) ---
+    hue_offset = (h_variation - 0.5) * (30 / 360)  # ±15°
+    hue = (base_hue + hue_offset) % 1.0
+
+    # --- LIGHTNESS variation (wide range) ---
+    lightness = 0.35 + 0.35 * l_variation  # 0.35–0.70
+
+    saturation = 0.75
+
+    r, g, b = colorsys.hls_to_rgb(hue, lightness, saturation)
+
+    return "#{:02x}{:02x}{:02x}".format(
+        int(r * 255),
+        int(g * 255),
+        int(b * 255),
+    )
 
 
 def _generate_events_html_map(
@@ -98,18 +124,23 @@ def _generate_events_html_map(
     folium.TileLayer("Esri.WorldImagery", name="Satellite").add_to(map_object)
     folium.TileLayer("OpenStreetMap", name="OSM").add_to(map_object)
 
-    # Color cycle for groups
-    colors = itertools.cycle(
-        ["red", "blue", "green", "purple", "orange", "darkred",
-         "cadetblue", "darkgreen", "black"]
-    )
-
     # Add grouped events
     for event_type, group_events in events.items():
-        color = next(colors)
-
+        color = _color_from_event_type(event_type)
+        color_box = (
+            "<span "
+            "style="
+            "'display:inline-block; "
+            "width:12px; "
+            "height:12px; "
+            f"background:{color}; "
+            "margin-right:6px; "
+            "border:1px solid #333;'"
+            "></span>"
+        )
+        legend_label = f"{color_box}{event_type} ({len(group_events)})"
         feature_group = folium.FeatureGroup(
-            name=f"{event_type} ({len(group_events)})",
+            name=legend_label,
             show=True,
         )
 
@@ -141,7 +172,7 @@ def _generate_events_html_map(
                     "weight": 3,
                     "fillOpacity": 0.6,
                 },
-                popup=folium.Popup(popup_html, max_width=300),
+                popup=folium.Popup(popup_html, max_width=350),
             ).add_to(feature_group)
 
         feature_group.add_to(map_object)
@@ -165,9 +196,7 @@ def _bbox_to_geometry(bbox, timestamp_dir):
             if _is_url(bbox_clean):
                 filename = "AOI_from_url.geojson"
                 file_path = Path(timestamp_dir) / filename
-                bbox_path = _download_url_to_file(
-                        bbox_clean,
-                        file_path)
+                bbox_path = _download_url_to_file(bbox_clean, file_path)
             # if path (geojson)
             else:
                 bbox_path = Path(bbox_clean)
@@ -208,8 +237,7 @@ def _add_aoi_to_events(
             continue
 
         try:
-            aoi_polygon, aoi, centroid = _bbox_to_geometry(
-                link, file_dir)
+            aoi_polygon, aoi, centroid = _bbox_to_geometry(link, file_dir)
 
             e["aoi_polygon"] = aoi_polygon
             e["aoi"] = aoi
@@ -275,7 +303,11 @@ def _geometry_from_file(path: str | Path):
         # FeatureCollection
         if data["type"] == "FeatureCollection":
             geometries = [shape(f["geometry"]) for f in data["features"]]
-            return geometries[0] if len(geometries) == 1 else gpd.GeoSeries(geometries).unary_union
+            return (
+                geometries[0]
+                if len(geometries) == 1
+                else gpd.GeoSeries(geometries).unary_union
+            )
 
         # Single geometry or Feature
         return shape(data.get("geometry", data))

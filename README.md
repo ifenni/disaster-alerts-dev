@@ -113,8 +113,9 @@ Tips:
 
 ---
 
-## Serve the HTML map event in a web browser from disaster-alerts cronjob using Flask
+## Serve the HTML map in a web browser
 
+To display the HTML events map in a web browser from disaster-alerts cronjob using Flask:
 Run Flask in the background:
 
 ```bash

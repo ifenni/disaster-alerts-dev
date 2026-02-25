@@ -40,4 +40,4 @@
 # */10 * * * * bash -lc 'source ~/.bashrc && cd /path/to/disaster-alerts && ./scripts/run.sh >> logs/cron.log 2>&1'
 
 # The cron job used in the context of the Flask web app
-*/10 * * * * /bin/bash -lc 'cd /home/ifenni/disaster-alerts-dev && conda activate disaster-alerts && ./scripts/run.sh >> logs/cron.log 2>&1'
+*/10 * * * * /bin/bash -lc 'cd /path/to/disaster-alerts && conda activate disaster-alerts && ./scripts/run.sh >> logs/cron.log 2>&1'

@@ -110,7 +110,33 @@ Tips:
 - The `-lc` ensures your conda initialization is sourced.
 - Rotate `logs/` as needed.
 
+
 ---
+
+## Serve the HTML map in a web browser
+
+To display the HTML events map in a web browser from disaster-alerts cronjob using Flask:
+Run Flask in the background:
+
+```bash
+nohup python web/app.py > logs/flask.log 2>&1 &
+```
+
+Check if the job is running, and kill it when needed
+
+```bash
+ps aux | grep ‘[we]b/app.py’ 
+kill *whatever_num_job*
+```
+
+You can then access the HTML event map locally at http://localhost:8000 after SSH'ing the location of the code (if needed)
+```bash
+ssh -L 8000:localhost:8000 username@server/domain_name
+```
+
+---
+
+
 
 ## Configuration reference
 

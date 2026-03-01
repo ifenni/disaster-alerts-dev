@@ -27,7 +27,7 @@ Event = Dict[str, Any]
 log = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
-# generate and save an intercative HTML map
+# generate and save an interactive HTML map
 # -----------------------------------------------------------------------------
 
 FAMILY_HUES = {

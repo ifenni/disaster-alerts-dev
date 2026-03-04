@@ -19,12 +19,7 @@ LOG_DIR="$ROOT/logs"
 DATA_DIR="$ROOT/data"
 mkdir -p "$LOG_DIR" "$DATA_DIR"
 
-# --- Load .env if present (exports YAGMAIL_* etc.) ---
-if [[ -f "$ROOT/.env" ]]; then
-  set -a
-  source "$ROOT/.env"
-  set +a
-fi
+# .env loading is handled by disaster_alerts.settings (safe key/value parsing).
 
 # --- Timestamped log (UTC) ---
 TS_UTC="$(date -u +'%Y%m%dT%H%M%SZ')"

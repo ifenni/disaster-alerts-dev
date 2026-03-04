@@ -18,8 +18,6 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 from zoneinfo import ZoneInfo
 
-import yagmail
-
 from .providers.common import get_json
 from .settings import Settings
 
@@ -513,6 +511,14 @@ def send(
     text_body: str,
 ) -> None:
     """Send the message with yagmail. Raises on failure."""
+    try:
+        import yagmail
+    except ImportError as exc:
+        raise RuntimeError(
+            "Email sending requires optional dependency 'yagmail'. "
+            "Install with: pip install yagmail"
+        ) from exc
+
     settings.require_email()
     user = settings.email.user
     app_password = settings.email.app_password

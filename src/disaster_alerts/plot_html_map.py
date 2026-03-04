@@ -8,18 +8,15 @@ from __future__ import annotations
 
 import colorsys
 import hashlib
+import ipaddress
 import json
 import logging
+import socket
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 from urllib.parse import urlparse
 
-import folium
-import geopandas as gpd
 import requests
-from folium.features import GeoJson
-from shapely import Point, wkt
-from shapely.geometry import box, shape
 
 from .settings import Settings
 
@@ -37,10 +34,57 @@ FAMILY_HUES = {
     "thunderstorm": 270 / 360,  # purple
 }
 
+TRUSTED_URL_SUFFIXES = (
+    "weather.gov",
+    "noaa.gov",
+    "usgs.gov",
+)
+MAX_GEOJSON_BYTES = 2 * 1024 * 1024  # 2 MiB
+
 
 def _is_url(s: str) -> bool:
     parsed = urlparse(s)
     return parsed.scheme in ("http", "https")
+
+
+def _host_is_trusted(hostname: str) -> bool:
+    host = hostname.lower().strip(".")
+    return any(
+        host == suffix or host.endswith(f".{suffix}")
+        for suffix in TRUSTED_URL_SUFFIXES
+    )
+
+
+def _host_resolves_public(hostname: str) -> bool:
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return False
+
+    for _, _, _, _, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            return False
+    return True
+
+
+def _validate_remote_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError("Only https URLs are allowed for AOI downloads")
+    if not parsed.hostname:
+        raise ValueError("URL must include a hostname")
+    if not _host_is_trusted(parsed.hostname):
+        raise ValueError(f"Untrusted host for AOI download: {parsed.hostname}")
+    if not _host_resolves_public(parsed.hostname):
+        raise ValueError(f"Host resolves to a non-public address: {parsed.hostname}")
 
 
 def _detect_family(event_type: str) -> str:
@@ -96,6 +140,15 @@ def _generate_events_html_map(
     grouped by routing key.
     """
 
+    try:
+        import folium
+        from folium.features import GeoJson
+    except ImportError as exc:
+        raise RuntimeError(
+            "Map generation requires optional dependencies (folium/shapely). "
+            "Install with: pip install folium shapely"
+        ) from exc
+
     output_file = file_dir / "activated_events_map.html"
 
     # Find a centroid to center the map
@@ -116,7 +169,7 @@ def _generate_events_html_map(
 
     # Create map
     map_object = folium.Map(
-        location=US_CENTER,
+        location=center or US_CENTER,
         zoom_start=5,
         tiles=None,
     )
@@ -186,6 +239,15 @@ def _generate_events_html_map(
 
 
 def _bbox_to_geometry(bbox, timestamp_dir):
+    try:
+        from shapely import Point, wkt
+        from shapely.geometry import box
+    except ImportError as exc:
+        raise RuntimeError(
+            "AOI geometry parsing requires optional dependency 'shapely'. "
+            "Install with: pip install shapely"
+        ) from exc
+
     if isinstance(bbox, str):
         bbox_clean = bbox.strip()
         bbox_upper = bbox_clean.upper()
@@ -197,10 +259,8 @@ def _bbox_to_geometry(bbox, timestamp_dir):
                 filename = "AOI_from_url.geojson"
                 file_path = Path(timestamp_dir) / filename
                 bbox_path = _download_url_to_file(bbox_clean, file_path)
-            # if path (geojson)
             else:
-                bbox_path = Path(bbox_clean)
-
+                raise ValueError("Local file paths are not allowed for event AOI sources")
             geometry = _geometry_from_file(bbox_path)
     else:
         lat_min, lat_max, lon_min, lon_max = bbox
@@ -224,12 +284,17 @@ def _add_aoi_to_events(
       - event["centroid"]
     """
     out: List[Event] = []
-    for i, e in enumerate(events):
-        event_type = e["properties"].get("event", "")
+    for e in events:
+        props = e.get("properties")
+        if not isinstance(props, dict):
+            props = {}
+        event_type = str(props.get("event") or "")
+        link = ""
         if "Flood" in event_type:
-            link = str(e.get("link"))
+            raw_link = e.get("link")
+            link = str(raw_link).strip() if isinstance(raw_link, str) else ""
         elif "Storm" in event_type:
-            affected_zones = e["properties"].get("affectedZones", [])
+            affected_zones = props.get("affectedZones", [])
             link = str(affected_zones[0]) if affected_zones else ""
         if not link:
             log.debug("Event %s has no link; skipping AOI", e.get("id"))
@@ -268,12 +333,27 @@ def _download_url_to_file(
     if ensure_geojson and output_path.suffix.lower() != ".geojson":
         output_path = output_path.with_suffix(".geojson")
 
-    response = requests.get(url, timeout=timeout)
+    _validate_remote_url(url)
+
+    response = requests.get(url, timeout=timeout, stream=True)
     response.raise_for_status()
+    ctype = (response.headers.get("Content-Type") or "").lower()
+    if "json" not in ctype:
+        raise ValueError(f"Expected JSON payload from {url}, got Content-Type={ctype}")
+
+    payload = bytearray()
+    for chunk in response.iter_content(chunk_size=16384):
+        if not chunk:
+            continue
+        payload.extend(chunk)
+        if len(payload) > MAX_GEOJSON_BYTES:
+            raise ValueError(
+                f"Response from {url} exceeded max size ({MAX_GEOJSON_BYTES} bytes)"
+            )
 
     # Parse JSON to ensure validity
     try:
-        data = response.json()
+        data = json.loads(payload.decode("utf-8"))
     except ValueError as e:
         raise ValueError(f"Response from {url} is not valid JSON") from e
 
@@ -288,6 +368,15 @@ def _geometry_from_file(path: str | Path):
     """
     Read a geometry from a spatial file (KML or GeoJSON).
     """
+    try:
+        from shapely.geometry import shape
+        from shapely.ops import unary_union
+    except ImportError as exc:
+        raise RuntimeError(
+            "Reading geometry files requires optional dependency 'shapely'. "
+            "Install with: pip install shapely"
+        ) from exc
+
     path = Path(path)
     suffix = path.suffix.lower()
 
@@ -306,7 +395,7 @@ def _geometry_from_file(path: str | Path):
             return (
                 geometries[0]
                 if len(geometries) == 1
-                else gpd.GeoSeries(geometries).unary_union
+                else unary_union(geometries)
             )
 
         # Single geometry or Feature

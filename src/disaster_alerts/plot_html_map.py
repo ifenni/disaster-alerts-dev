@@ -16,16 +16,78 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 from urllib.parse import urlparse
 
+import folium
 import requests
+from folium import MacroElement
+from folium.plugins import Draw
+from jinja2 import Template
 
 from .settings import Settings
-
-Event = Dict[str, Any]
-log = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
 # generate and save an interactive HTML map
 # -----------------------------------------------------------------------------
+
+
+Event = Dict[str, Any]
+log = logging.getLogger(__name__)
+
+
+class DrawBBoxJS(MacroElement):
+    _template = Template(
+        """
+        {% macro script(this, kwargs) %}
+        {{this._parent.get_name()}}.on('draw:created', function(e) {
+            var layer = e.layer;
+            var bounds = layer.getBounds();
+            var bbox = {
+                lat_min: bounds.getSouth(),
+                lat_max: bounds.getNorth(),
+                lon_min: bounds.getWest(),
+                lon_max: bounds.getEast()
+            };
+            console.log("Draw event triggered:", bbox);
+
+            alert("Processing your bounding box. Press OK to start!");
+
+            fetch("/process_bbox", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(bbox)
+            })
+            .then(resp => resp.json())
+            .then(data => {
+                console.log("BBox response:", data);
+
+                // Poll the server until next-pass finishes
+                function checkStatus() {
+                    fetch("/processing_status")
+                        .then(r => r.json())
+                        .then(status => {
+                            if (status.running) {
+                                console.log("Next-pass still running...");
+                                setTimeout(checkStatus, 2000);
+                            } else {
+                                alert(
+                                    "Next-pass processing complete! " +
+                                    "Redirecting to maps..."
+                                );
+                                window.location.href = "/show_maps";
+                            }
+                        })
+                        .catch(err => {
+                            console.error("Error checking status:", err);
+                            setTimeout(checkStatus, 5000);
+                        });
+                }
+                checkStatus();
+            })
+            .catch(err => console.error("Error sending bbox:", err));
+        });
+        {% endmacro %}
+    """
+    )
+
 
 FAMILY_HUES = {
     "flood": 210 / 360,  # blue
@@ -50,8 +112,7 @@ def _is_url(s: str) -> bool:
 def _host_is_trusted(hostname: str) -> bool:
     host = hostname.lower().strip(".")
     return any(
-        host == suffix or host.endswith(f".{suffix}")
-        for suffix in TRUSTED_URL_SUFFIXES
+        host == suffix or host.endswith(f".{suffix}") for suffix in TRUSTED_URL_SUFFIXES
     )
 
 
@@ -131,17 +192,15 @@ def _color_from_event_type(event_type: str) -> str:
 
 
 def _generate_events_html_map(
-    settings: Settings,
-    events: Dict[str, List[Event]],
-    file_dir: Path,
+    settings: "Settings",
+    events: dict[str, list["Event"]],
+    file_dir: "Path",
 ):
     """
     Create an interactive map displaying activated events,
-    grouped by routing key.
+    grouped by routing key, and enabling the user to draw a bounding box.
     """
-
     try:
-        import folium
         from folium.features import GeoJson
     except ImportError as exc:
         raise RuntimeError(
@@ -151,51 +210,22 @@ def _generate_events_html_map(
 
     output_file = file_dir / "activated_events_map.html"
 
-    # Find a centroid to center the map
-    center = None
-    for group_events in events.values():
-        for e in group_events:
-            centroid = e.get("centroid")
-            if centroid is not None:
-                center = [centroid.y, centroid.x]
-                break
-        if center:
-            break
-
-    if center is None:
-        raise RuntimeError("No event has a centroid; cannot center map")
-
     US_CENTER = [39.8283, -98.5795]
+    map_object = folium.Map(location=US_CENTER, zoom_start=5, tiles=None)
 
-    # Create map
-    map_object = folium.Map(
-        location=center or US_CENTER,
-        zoom_start=5,
-        tiles=None,
-    )
-
+    # Add base layers
     folium.TileLayer("Esri.WorldImagery", name="Satellite").add_to(map_object)
     folium.TileLayer("OpenStreetMap", name="OSM").add_to(map_object)
 
-    # Add grouped events
+    # Add grouped event layers
     for event_type, group_events in events.items():
         color = _color_from_event_type(event_type)
         color_box = (
-            "<span "
-            "style="
-            "'display:inline-block; "
-            "width:12px; "
-            "height:12px; "
-            f"background:{color}; "
-            "margin-right:6px; "
-            "border:1px solid #333;'"
-            "></span>"
+            "<span style='display:inline-block; width:12px; height:12px; "
+            f"background:{color}; margin-right:6px; border:1px solid #333;'></span>"
         )
         legend_label = f"{color_box}{event_type} ({len(group_events)})"
-        feature_group = folium.FeatureGroup(
-            name=legend_label,
-            show=True,
-        )
+        feature_group = folium.FeatureGroup(name=legend_label, show=True)
 
         for e in group_events:
             geom = e.get("aoi_polygon")
@@ -203,7 +233,6 @@ def _generate_events_html_map(
                 log.debug("Event %s has no AOI geometry", e.get("id"))
                 continue
             provider = str(e.get("provider", "")).upper()
-
             popup_html = "<br>".join(
                 f"<b>{label}:</b> {value}"
                 for label, value in [
@@ -221,20 +250,32 @@ def _generate_events_html_map(
                     "fillColor": c,
                     "fillOpacity": 0.35,
                 },
-                highlight_function=lambda _: {
-                    "weight": 3,
-                    "fillOpacity": 0.6,
-                },
+                highlight_function=lambda _: {"weight": 3, "fillOpacity": 0.6},
                 popup=folium.Popup(popup_html, max_width=350),
             ).add_to(feature_group)
 
         feature_group.add_to(map_object)
 
-    # Controls & save
+    # Add Layer controls
     folium.LayerControl(collapsed=False).add_to(map_object)
 
-    map_object.save(output_file)
+    draw = Draw(
+        draw_options={
+            "rectangle": True,
+            "polygon": False,
+            "circle": False,
+            "marker": False,
+            "polyline": False,
+        },
+        edit_options={"edit": True},
+    )
+    draw.add_to(map_object)
 
+    # Attach the JS
+    map_object.add_child(DrawBBoxJS())
+
+    # Save HTML
+    map_object.save(output_file)
     log.info("Event map written to %s", output_file)
 
 
@@ -260,7 +301,9 @@ def _bbox_to_geometry(bbox, timestamp_dir):
                 file_path = Path(timestamp_dir) / filename
                 bbox_path = _download_url_to_file(bbox_clean, file_path)
             else:
-                raise ValueError("Local file paths are not allowed for event AOI sources")
+                raise ValueError(
+                    "Local file paths are not allowed for event AOI sources"
+                )
             geometry = _geometry_from_file(bbox_path)
     else:
         lat_min, lat_max, lon_min, lon_max = bbox
@@ -392,11 +435,7 @@ def _geometry_from_file(path: str | Path):
         # FeatureCollection
         if data["type"] == "FeatureCollection":
             geometries = [shape(f["geometry"]) for f in data["features"]]
-            return (
-                geometries[0]
-                if len(geometries) == 1
-                else unary_union(geometries)
-            )
+            return geometries[0] if len(geometries) == 1 else unary_union(geometries)
 
         # Single geometry or Feature
         return shape(data.get("geometry", data))

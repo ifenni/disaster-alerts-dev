@@ -27,3 +27,4 @@ dependencies:
   - timezonefinder
   - pip:
       - yagmail
+      - git+https://github.com/OPERA-Cal-Val/next_pass.git@main

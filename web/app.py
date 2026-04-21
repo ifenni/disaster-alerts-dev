@@ -1,3 +1,4 @@
+import glob
 import logging
 import os
 import subprocess
@@ -24,26 +25,59 @@ BASE_OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 processing_state = {"running": False, "latest_folder": None}
 
 
-# ---- Background function to run next_pass ----
-def run_next_pass(bbox):
+def run_next_pass(params):
+    """
+    Builds the command line arguments based on the dashboard panel selections
+    and executes the next_pass.py script.
+    """
     processing_state["running"] = True
     processing_state["latest_folder"] = None
     try:
+        # 1) Base command with Bounding Box
         cmd = [
             "python",
             NEXT_PASS_SCRIPT,
             "-b",
-            str(bbox["lat_min"]),
-            str(bbox["lat_max"]),
-            str(bbox["lon_min"]),
-            str(bbox["lon_max"]),
+            str(params["lat_min"]),
+            str(params["lat_max"]),
+            str(params["lon_min"]),
+            str(params["lon_max"]),
         ]
-        print("Running command:", " ".join(cmd))
+
+        # 2) Add Search Type (-f)
+        if params.get("search_type"):
+            cmd += ["-f", params["search_type"]]
+
+        # 3) Add Satellites (-s) - Allows multiple values
+        if params.get("satellites"):
+            cmd.append("-s")
+            # If 'all' is selected, you might want to handle it specifically
+            # or just pass it if the script handles 'all'
+            cmd.extend(params["satellites"])
+
+        # 4) Add Products (-p) - Allows multiple values; skip entirely if "all" selected
+        products = params.get("products", [])
+        if products and "all" not in products:
+            cmd.append("-p")
+            cmd.extend(products)
+
+        # 5) Add Lookback (-k)
+        if params.get("lookback") and str(params["lookback"]).isdigit():
+            cmd += ["-k", str(params["lookback"])]
+
+        # 6) Add Event Date (-g)
+        # Logic: only add if DRCS is 'yes' and a valid date is provided
+        if params.get("drcs") == "yes" and params.get("event_date") not in [
+            None,
+            "N/A",
+            "",
+        ]:
+            cmd += ["-g", params["event_date"]]
+
+        print("Executing command:", " ".join(cmd))
         subprocess.run(cmd, check=True)
 
         # Find latest output folder
-        import glob
-
         folders = sorted(
             glob.glob(os.path.join(BASE_OUTPUT_DIR, "nextpass_outputs_*")),
             key=os.path.getmtime,
@@ -51,13 +85,9 @@ def run_next_pass(bbox):
         )
         if folders:
             processing_state["latest_folder"] = folders[0]
-            print(
-                "Next-pass output folder detected:", processing_state["latest_folder"]
-            )
-        else:
-            print("No output folder found after next-pass run.")
+            print(f"Success! Output folder: {folders[0]}")
     except Exception as e:
-        print("Error running next_pass:", e)
+        print(f"Error running next_pass: {e}")
     finally:
         processing_state["running"] = False
 
@@ -79,22 +109,18 @@ def test_ping():
 @app.route("/process_bbox", methods=["POST"])
 def process_bbox():
     data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data received"}), 400
-
-    lat_min = data.get("lat_min")
-    lat_max = data.get("lat_max")
-    lon_min = data.get("lon_min")
-    lon_max = data.get("lon_max")
-
-    if None in (lat_min, lat_max, lon_min, lon_max):
+    if not data or not all(
+        k in data for k in ("lat_min", "lat_max", "lon_min", "lon_max")
+    ):
         return jsonify({"error": "Missing bounding box data"}), 400
 
     print(
-        f"Received bbox: lat_min={lat_min}, lat_max={lat_max}, lon_min={lon_min},"
-        f" lon_max={lon_max}"
+        f"Received search request for bbox: {data.get('lat_min')},"
+        f" {data.get('lon_min')}"
     )
 
+    # Passing 'data' dictionary ensures run_next_pass gets satellites,
+    # products, etc.
     threading.Thread(target=run_next_pass, args=(data,)).start()
     return jsonify({"status": "processing started"})
 
@@ -117,7 +143,8 @@ def maps(filename):
 @app.route("/show_maps")
 def show_maps():
     """
-    Display run_output.txt first, then the two maps side by side below it.
+    Display run_output.txt first, then the maps below it.
+    Shows a third DRCS map if opera_products_drcs_map.html was produced.
     """
     folder = processing_state.get("latest_folder")
     if not folder:
@@ -127,21 +154,30 @@ def show_maps():
 
     satellite_map = "satellite_overpasses_map.html"
     opera_map = "opera_products_map.html"
+    drcs_map = "opera_products_drcs_map.html"
+    has_drcs = os.path.exists(os.path.join(folder, drcs_map))
+
     log_file = os.path.join(folder, "run_output.txt")
     log_content = ""
     if os.path.exists(log_file):
         with open(log_file, "r") as f:
             log_content = f.read()
 
+    iframe_width = "33%" if has_drcs else "50%"
+    drcs_iframe = f'<iframe src="/maps/{drcs_map}"></iframe>' if has_drcs else ""
+
     html = f"""
     <html>
       <head>
         <title>Next-Pass Results</title>
         <style>
-          body {{ display:flex; flex-direction: column; margin:0; height:100vh; }}
-          pre {{ flex: 0 0 30%; overflow:auto; padding:10px; background:#f4f4f4; }}
-          .maps-row {{ display:flex; flex: 1 1 auto; }}
-          iframe {{ width: 50%; height:100%; border:none; }}
+          body {{ display:flex; flex-direction: column; margin:0;
+                  height:100vh; font-family: sans-serif; background:#f3f4f6; }}
+          pre {{ flex: 0 0 25%; overflow:auto; padding:15px; background:#111;
+                 color:#10b981; font-size:12px; border-bottom: 2px solid #374151; }}
+          .maps-row {{ display:flex; flex: 1; background: white; }}
+          iframe {{ width: {iframe_width}; height:100%; border:none;
+                    border-right: 1px solid #d1d5db; }}
         </style>
       </head>
       <body>
@@ -149,6 +185,7 @@ def show_maps():
         <div class="maps-row">
           <iframe src="/maps/{satellite_map}"></iframe>
           <iframe src="/maps/{opera_map}"></iframe>
+          {drcs_iframe}
         </div>
       </body>
     </html>

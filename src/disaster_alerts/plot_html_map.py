@@ -18,9 +18,13 @@ from urllib.parse import urlparse
 
 import folium
 import requests
-from folium import MacroElement
+from branca.element import MacroElement
+from folium.features import GeoJson
 from folium.plugins import Draw
 from jinja2 import Template
+from shapely import Point, wkt
+from shapely.geometry import MultiPolygon, box, shape
+from shapely.ops import unary_union
 
 from .settings import Settings
 
@@ -33,60 +37,379 @@ Event = Dict[str, Any]
 log = logging.getLogger(__name__)
 
 
-class DrawBBoxJS(MacroElement):
-    _template = Template(
-        """
-        {% macro script(this, kwargs) %}
-        {{this._parent.get_name()}}.on('draw:created', function(e) {
-            var layer = e.layer;
-            var bounds = layer.getBounds();
-            var bbox = {
-                lat_min: bounds.getSouth(),
-                lat_max: bounds.getNorth(),
-                lon_min: bounds.getWest(),
-                lon_max: bounds.getEast()
-            };
-            console.log("Draw event triggered:", bbox);
-
-            alert("Processing your bounding box. Press OK to start!");
-
-            fetch("/process_bbox", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify(bbox)
-            })
-            .then(resp => resp.json())
-            .then(data => {
-                console.log("BBox response:", data);
-
-                // Poll the server until next-pass finishes
-                function checkStatus() {
-                    fetch("/processing_status")
-                        .then(r => r.json())
-                        .then(status => {
-                            if (status.running) {
-                                console.log("Next-pass still running...");
-                                setTimeout(checkStatus, 2000);
-                            } else {
-                                alert(
-                                    "Next-pass processing complete! " +
-                                    "Redirecting to maps..."
-                                );
-                                window.location.href = "/show_maps";
-                            }
-                        })
-                        .catch(err => {
-                            console.error("Error checking status:", err);
-                            setTimeout(checkStatus, 5000);
-                        });
+class MapDashboardJS(MacroElement):
+    def __init__(self):
+        super().__init__()
+        self._template = Template(
+            """
+            {% macro html(this, kwargs) %}
+            <style>
+                #control-panel {
+                    position: absolute;
+                    top: 20px; left: 200px;
+                    z-index: 1000;
+                    background: rgba(255, 255, 255, 0.95);
+                    padding: 8px 15px;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                    display: flex;
+                    gap: 10px;
+                    align-items: center;
+                    border: 2px solid #374151;
+                    font-family: Arial, sans-serif;
                 }
-                checkStatus();
-            })
-            .catch(err => console.error("Error sending bbox:", err));
-        });
-        {% endmacro %}
-    """
-    )
+
+                .input-group {
+                    display: flex;
+                    align-items: center;
+                }
+
+                .field-label {
+                    display: none;
+                }
+
+                #control-panel select, #control-panel input {
+                    border: 1px solid #9ca3af;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: 14px;
+                    background-color: #ffffff;
+                    color: #111827;
+                    height: 34px;
+                }
+
+                .multi-dropdown {
+                    position: relative;
+                    display: inline-block;
+                }
+
+                .multi-dropdown-btn {
+                    position: relative;
+                    border: 1px solid #9ca3af;
+                    border-radius: 4px;
+                    padding: 4px 28px 4px 8px;
+                    font-size: 14px;
+                    background-color: #ffffff;
+                    color: #111827;
+                    height: 34px;
+                    cursor: pointer;
+                    white-space: nowrap;
+                    min-width: 140px;
+                    text-align: left;
+                    appearance: none;
+                    -webkit-appearance: none;
+                    padding-right: 24px;
+                    font-family: Arial, sans-serif;
+                }
+
+                .multi-dropdown-btn:hover {
+                    border-color: #6b7280;
+                }
+
+                .multi-dropdown-btn::after {
+                    content: " ▾";
+                    position: absolute;
+                    right: 8px;
+                }
+
+                .multi-dropdown-list {
+                    display: none;
+                    position: absolute;
+                    top: 36px;
+                    left: 0;
+                    background: #ffffff;
+                    border: 1px solid #9ca3af;
+                    border-radius: 4px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    z-index: 9999;
+                    min-width: 100%;
+                    padding: 4px 0;
+                }
+
+                .multi-dropdown-list.open {
+                    display: block;
+                }
+
+                .multi-dropdown-list label {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 5px 12px;
+                    font-size: 14px;
+                    color: #111827;
+                    cursor: pointer;
+                    white-space: nowrap;
+                }
+
+                .multi-dropdown-list label:hover {
+                    background-color: #f3f4f6;
+                }
+
+                #search-btn {
+                    background-color: #6b7280;
+                    color: white;
+                    border: none;
+                    padding: 0 20px;
+                    border-radius: 4px;
+                    font-weight: bold;
+                    font-size: 15px;
+                    cursor: pointer;
+                    height: 34px;
+                }
+
+                #search-btn:hover {
+                    background-color: #4b5563;
+                }
+
+                .leaflet-control-layers {
+                    border-radius: 8px !important;
+                    border: 2px solid #374151 !important;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.2) !important;
+                    background: rgba(255,255,255,0.95) !important;
+                    font-family: Arial, sans-serif !important;
+                    min-width: 200px !important;
+                    width: auto !important;
+                }
+
+                .leaflet-control-layers label {
+                    display: flex;
+                    align-items: center;
+                    white-space: nowrap;
+                    margin-bottom: 6px;
+                    font-size: 14px;
+                }
+
+                .leaflet-control-layers-expanded {
+                    padding: 10px !important;
+                }
+
+                .leaflet-control-layers-base,
+                .leaflet-control-layers-overlays {
+                    margin-top: 6px;
+                }
+
+                /* Move legend slightly down */
+                .leaflet-top.leaflet-right {
+                    top: 80px !important;
+                }
+
+            </style>
+
+            <div id="control-panel">
+                <div class="input-group">
+                    <select id="search_type">
+                        <option value="both">Functionality: Both</option>
+                        <option value="overpasses">Functionality: Overpasses</option>
+                        <option value="opera_search">Functionality: Opera Search</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <div class="multi-dropdown" id="sat-dropdown">
+                        <button type="button"
+                            class="multi-dropdown-btn"
+                            id="sat-btn">All Satellites</button>
+                        <div class="multi-dropdown-list" id="sat-list">
+                            <label><input type="checkbox" value="all"
+                                checked> All Satellites</label>
+                            <label><input type="checkbox"
+                                value="sentinel-1"> Sentinel-1</label>
+                            <label><input type="checkbox"
+                                value="sentinel-2"> Sentinel-2</label>
+                            <label><input type="checkbox"
+                                value="landsat"> Landsat</label>
+                            <label><input type="checkbox"
+                                value="nisar"> NISAR</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <div class="multi-dropdown" id="prod-dropdown">
+                        <button type="button"
+                            class="multi-dropdown-btn"
+                            id="prod-btn">All Products</button>
+                        <div class="multi-dropdown-list" id="prod-list">
+                            <label><input type="checkbox" value="all"
+                                checked> All Products</label>
+                            <label><input type="checkbox"
+                                value="DSWX-HLS_V1"> DSWX-HLS_V1</label>
+                            <label><input type="checkbox"
+                                value="DSWX-S1_V1"> DSWX-S1_V1</label>
+                            <label><input type="checkbox"
+                                value="DIST-ALERT-HLS_V1"> DIST-ALERT-HLS_V1</label>
+                            <label><input type="checkbox"
+                                value="DIST-ANN-HLS_V1"> DIST-ANN-HLS_V1</label>
+                            <label><input type="checkbox"
+                                value="RTC-S1_V1"> RTC-S1_V1</label>
+                            <label><input type="checkbox"
+                                value="CSLC-S1_V1"> CSLC-S1_V1</label>
+                            <label><input type="checkbox"
+                                value="DISP-S1_V1"> DISP-S1_V1</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <input type="number" id="lookback"
+                        placeholder="Number of lookback days"
+                        min="1" max="11" style="width: 190px;">
+                </div>
+
+                <div class="input-group">
+                    <select id="drcs_enabled" onchange="toggleDate(this.value)">
+                        <option value="no">DRCS: No</option>
+                        <option value="yes">DRCS: Yes</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <input type="text" id="event_date"
+                        placeholder="YYYY-MM-DDTHH:MM"
+                        value="YYYY-MM-DDTHH:MM" disabled style="width: 180px;">
+                </div>
+
+                <button id="search-btn">Search</button>
+            </div>
+            {% endmacro %}
+
+            {% macro script(this, kwargs) %}
+            var currentBbox = null;
+            var currentBboxLayer = null;
+            var justDrawn = false;
+
+            // ---- Custom multi-select dropdown logic ----
+            function setupMultiDropdown(btnId, listId, allValue, defaultLabel) {
+                var btn = document.getElementById(btnId);
+                var list = document.getElementById(listId);
+                var checkboxes = list.querySelectorAll('input[type=checkbox]');
+                var allBox = list.querySelector('input[value="' + allValue + '"]');
+
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var open = '.multi-dropdown-list.open';
+                    document.querySelectorAll(open).forEach(function(el) {
+                        if (el !== list) el.classList.remove('open');
+                    });
+                    list.classList.toggle('open');
+                });
+
+                checkboxes.forEach(function(cb) {
+                    cb.addEventListener('change', function() {
+                        if (cb === allBox && cb.checked) {
+                            checkboxes.forEach(function(c) { c.checked = false; });
+                            allBox.checked = true;
+                        } else if (cb !== allBox && cb.checked) {
+                            allBox.checked = false;
+                        }
+                    });
+                });
+            }
+
+            function getMultiValues(listId, allValue) {
+                var list = document.getElementById(listId);
+                var allBox = list.querySelector('input[value="' + allValue + '"]');
+                if (allBox.checked) return [allValue];
+                return Array.from(list.querySelectorAll('input[type=checkbox]'))
+                    .filter(function(c) { return c.checked; })
+                    .map(function(c) { return c.value; });
+            }
+
+            document.addEventListener('click', function() {
+                var open = '.multi-dropdown-list.open';
+                document.querySelectorAll(open).forEach(function(el) {
+                    el.classList.remove('open');
+                });
+            });
+
+            setupMultiDropdown('sat-btn', 'sat-list', 'all', 'All Satellites');
+            setupMultiDropdown('prod-btn', 'prod-list', 'all', 'All Products');
+
+            function toggleDate(val) {
+                const input = document.getElementById('event_date');
+                if(val === 'yes') {
+                    input.disabled = false;
+                    input.value = '';
+                    input.style.color = '#000000';
+                } else {
+                    input.disabled = true;
+                    input.value = 'YYYY-MM-DDTHH:MM';
+                    input.style.color = '#6b7280';
+                }
+            }
+
+            {{this._parent.get_name()}}.on('draw:created', function(e) {
+                if (currentBboxLayer) {
+                    {{this._parent.get_name()}}.removeLayer(currentBboxLayer);
+                }
+                currentBboxLayer = e.layer;
+                currentBboxLayer.addTo({{this._parent.get_name()}});
+                var bounds = currentBboxLayer.getBounds();
+                currentBbox = {
+                    lat_min: bounds.getSouth(),
+                    lat_max: bounds.getNorth(),
+                    lon_min: bounds.getWest(),
+                    lon_max: bounds.getEast()
+                };
+                justDrawn = true;
+                console.log("Bounding box ready.");
+            });
+
+            {{this._parent.get_name()}}.on('click', function() {
+                if (justDrawn) {
+                    justDrawn = false;
+                    return;
+                }
+                if (currentBboxLayer) {
+                    {{this._parent.get_name()}}.removeLayer(currentBboxLayer);
+                    currentBboxLayer = null;
+                    currentBbox = null;
+                }
+            });
+
+            document.getElementById('search-btn').onclick = function() {
+                if (!currentBbox) {
+                    alert("Please draw a bounding box on the map first!");
+                    return;
+                }
+
+                const payload = {
+                    ...currentBbox,
+                    search_type: document.getElementById('search_type').value,
+                    satellites: getMultiValues('sat-list', 'all'),
+                    products: getMultiValues('prod-list', 'all'),
+                    lookback: document.getElementById('lookback').value,
+                    drcs: document.getElementById('drcs_enabled')
+                        .value.replace('DRCS: ', '').toLowerCase(),
+                    event_date: document.getElementById('event_date').value
+                };
+
+                fetch("/process_bbox", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify(payload)
+                })
+                .then(resp => resp.json())
+                .then(data => {
+                    alert("Search command sent. Processing...");
+                    checkStatus();
+                });
+            };
+
+            function checkStatus() {
+                fetch("/processing_status")
+                    .then(r => r.json())
+                    .then(status => {
+                        if (status.running) {
+                            setTimeout(checkStatus, 2000);
+                        } else {
+                            window.location.href = "/show_maps";
+                        }
+                    });
+            }
+            {% endmacro %}
+        """
+        )
 
 
 FAMILY_HUES = {
@@ -200,14 +523,6 @@ def _generate_events_html_map(
     Create an interactive map displaying activated events,
     grouped by routing key, and enabling the user to draw a bounding box.
     """
-    try:
-        from folium.features import GeoJson
-    except ImportError as exc:
-        raise RuntimeError(
-            "Map generation requires optional dependencies (folium/shapely). "
-            "Install with: pip install folium shapely"
-        ) from exc
-
     output_file = file_dir / "activated_events_map.html"
 
     US_CENTER = [39.8283, -98.5795]
@@ -242,18 +557,22 @@ def _generate_events_html_map(
                 ]
                 if value
             )
-            GeoJson(
-                data=geom.__geo_interface__,
-                style_function=lambda _, c=color: {
-                    "color": c,
-                    "weight": 2,
-                    "fillColor": c,
-                    "fillOpacity": 0.35,
-                },
-                highlight_function=lambda _: {"weight": 3, "fillOpacity": 0.6},
-                popup=folium.Popup(popup_html, max_width=350),
-            ).add_to(feature_group)
-
+            if isinstance(geom, MultiPolygon):
+                geometries = geom.geoms
+            else:
+                geometries = [geom]
+            for g in geometries:
+                GeoJson(
+                    data=g.__geo_interface__,
+                    style_function=lambda _, c=color: {
+                        "color": c,
+                        "weight": 2,
+                        "fillColor": c,
+                        "fillOpacity": 0.35,
+                    },
+                    highlight_function=lambda _: {"weight": 3, "fillOpacity": 0.6},
+                    popup=folium.Popup(popup_html, max_width=350),
+                ).add_to(feature_group)
         feature_group.add_to(map_object)
 
     # Add Layer controls
@@ -271,8 +590,8 @@ def _generate_events_html_map(
     )
     draw.add_to(map_object)
 
-    # Attach the JS
-    map_object.add_child(DrawBBoxJS())
+    # After adding draw controls, add the new dashboard
+    map_object.add_child(MapDashboardJS())
 
     # Save HTML
     map_object.save(output_file)
@@ -280,15 +599,6 @@ def _generate_events_html_map(
 
 
 def _bbox_to_geometry(bbox, timestamp_dir):
-    try:
-        from shapely import Point, wkt
-        from shapely.geometry import box
-    except ImportError as exc:
-        raise RuntimeError(
-            "AOI geometry parsing requires optional dependency 'shapely'. "
-            "Install with: pip install shapely"
-        ) from exc
-
     if isinstance(bbox, str):
         bbox_clean = bbox.strip()
         bbox_upper = bbox_clean.upper()
@@ -333,10 +643,11 @@ def _add_aoi_to_events(
             props = {}
         event_type = str(props.get("event") or "")
         link = ""
-        if "Flood" in event_type:
+        event_lower = event_type.lower()
+        if "flood" in event_lower:
             raw_link = e.get("link")
             link = str(raw_link).strip() if isinstance(raw_link, str) else ""
-        elif "Storm" in event_type:
+        elif "storm" in event_lower:
             affected_zones = props.get("affectedZones", [])
             link = str(affected_zones[0]) if affected_zones else ""
         if not link:
@@ -411,15 +722,6 @@ def _geometry_from_file(path: str | Path):
     """
     Read a geometry from a spatial file (KML or GeoJSON).
     """
-    try:
-        from shapely.geometry import shape
-        from shapely.ops import unary_union
-    except ImportError as exc:
-        raise RuntimeError(
-            "Reading geometry files requires optional dependency 'shapely'. "
-            "Install with: pip install shapely"
-        ) from exc
-
     path = Path(path)
     suffix = path.suffix.lower()
 
@@ -437,7 +739,34 @@ def _geometry_from_file(path: str | Path):
             geometries = [shape(f["geometry"]) for f in data["features"]]
             return geometries[0] if len(geometries) == 1 else unary_union(geometries)
 
-        # Single geometry or Feature
-        return shape(data.get("geometry", data))
+        # Single Feature
+        if data.get("type") == "Feature":
+            geometry = data.get("geometry")
+
+            if geometry is None:
+                affected = data.get("properties", {}).get("affectedZones", [])
+
+                geometries = []
+                for zone_url in affected:
+                    try:
+                        zone_data = requests.get(zone_url).json()
+                        if zone_data.get("geometry"):
+                            geometries.append(shape(zone_data["geometry"]))
+                    except Exception:
+                        pass
+
+                if geometries:
+                    return (
+                        geometries[0]
+                        if len(geometries) == 1
+                        else unary_union(geometries)
+                    )
+                else:
+                    raise ValueError("No geometry found and affectedZones failed.")
+
+            return shape(geometry)
+
+        # Raw geometry
+        return shape(data)
 
     raise ValueError(f"Unsupported spatial file format: {path}")

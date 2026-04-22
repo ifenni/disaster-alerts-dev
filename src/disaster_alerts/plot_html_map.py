@@ -379,8 +379,8 @@ class MapDashboardJS(MacroElement):
                     satellites: getMultiValues('sat-list', 'all'),
                     products: getMultiValues('prod-list', 'all'),
                     lookback: document.getElementById('lookback').value,
-                    drcs: document.getElementById('drcs_enabled')
-                        .value.replace('DRCS: ', '').toLowerCase(),
+                    drcs: document.getElementById('drcs_enabled').value
+                        .replace('DRCS: ', '').toLowerCase(),
                     event_date: document.getElementById('event_date').value
                 };
 
@@ -402,6 +402,8 @@ class MapDashboardJS(MacroElement):
                     .then(status => {
                         if (status.running) {
                             setTimeout(checkStatus, 2000);
+                        } else if (status.error) {
+                            alert("Processing failed: " + status.error);
                         } else {
                             window.location.href = "/show_maps";
                         }

@@ -22,7 +22,7 @@ NEXT_PASS_SCRIPT = os.path.abspath(
 BASE_OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Shared state
-processing_state = {"running": False, "latest_folder": None}
+processing_state = {"running": False, "latest_folder": None, "error": None}
 
 
 def run_next_pass(params):
@@ -32,6 +32,7 @@ def run_next_pass(params):
     """
     processing_state["running"] = True
     processing_state["latest_folder"] = None
+    processing_state["error"] = None
     try:
         # 1) Base command with Bounding Box
         cmd = [
@@ -87,6 +88,7 @@ def run_next_pass(params):
             processing_state["latest_folder"] = folders[0]
             print(f"Success! Output folder: {folders[0]}")
     except Exception as e:
+        processing_state["error"] = str(e)
         print(f"Error running next_pass: {e}")
     finally:
         processing_state["running"] = False
@@ -128,7 +130,12 @@ def process_bbox():
 # ---- Status endpoint ----
 @app.route("/processing_status")
 def processing_status():
-    return jsonify({"running": processing_state["running"]})
+    return jsonify(
+        {
+            "running": processing_state["running"],
+            "error": processing_state["error"],
+        }
+    )
 
 
 # ---- Serve maps from latest next-pass folder ----

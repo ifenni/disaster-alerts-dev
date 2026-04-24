@@ -16,9 +16,6 @@ app = Flask(__name__)
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 HTML_FILE = "activated_events_map.html"
-NEXT_PASS_SCRIPT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "next_pass", "next_pass.py")
-)
 BASE_OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Shared state
@@ -42,8 +39,9 @@ def run_next_pass(params):
     try:
         # 1) Base command with Bounding Box
         cmd = [
-            "python",
-            NEXT_PASS_SCRIPT,
+            sys.executable,
+            "-m",
+            "next_pass",
             "-b",
             str(params["lat_min"]),
             str(params["lat_max"]),
@@ -82,7 +80,7 @@ def run_next_pass(params):
             cmd += ["-g", params["event_date"]]
 
         print("Executing command:", " ".join(cmd))
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, cwd=BASE_OUTPUT_DIR)
 
         # Find latest output folder
         folders = sorted(

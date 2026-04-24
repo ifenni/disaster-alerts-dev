@@ -22,7 +22,12 @@ NEXT_PASS_SCRIPT = os.path.abspath(
 BASE_OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Shared state
-processing_state = {"running": False, "latest_folder": None, "error": None}
+processing_state = {
+    "running": False,
+    "latest_folder": None,
+    "error": None,
+    "search_type": None,
+}
 
 
 def run_next_pass(params):
@@ -33,6 +38,7 @@ def run_next_pass(params):
     processing_state["running"] = True
     processing_state["latest_folder"] = None
     processing_state["error"] = None
+    processing_state["search_type"] = params.get("search_type", "both")
     try:
         # 1) Base command with Bounding Box
         cmd = [
@@ -159,10 +165,17 @@ def show_maps():
             "<h3>No next-pass output yet. Draw a bounding box to start processing.</h3>"
         )
 
-    satellite_map = "satellite_overpasses_map.html"
+    search_type = processing_state.get("search_type", "both")
+    sat_map = "satellite_overpasses_map.html"
     opera_map = "opera_products_map.html"
     drcs_map = "opera_products_drcs_map.html"
-    has_drcs = os.path.exists(os.path.join(folder, drcs_map))
+
+    show_sat = search_type in ("both", "overpasses")
+    show_opera = search_type in ("both", "opera_search")
+    show_drcs = show_opera and os.path.exists(os.path.join(folder, drcs_map))
+
+    map_count = sum([show_sat, show_opera, show_drcs])
+    iframe_width = f"{100 // map_count}%" if map_count else "100%"
 
     log_file = os.path.join(folder, "run_output.txt")
     log_content = ""
@@ -170,8 +183,13 @@ def show_maps():
         with open(log_file, "r") as f:
             log_content = f.read()
 
-    iframe_width = "33%" if has_drcs else "50%"
-    drcs_iframe = f'<iframe src="/maps/{drcs_map}"></iframe>' if has_drcs else ""
+    iframes = ""
+    if show_sat:
+        iframes += f'<iframe src="/maps/{sat_map}"></iframe>'
+    if show_opera:
+        iframes += f'<iframe src="/maps/{opera_map}"></iframe>'
+    if show_drcs:
+        iframes += f'<iframe src="/maps/{drcs_map}"></iframe>'
 
     html = f"""
     <html>
@@ -179,21 +197,19 @@ def show_maps():
         <title>Next-Pass Results</title>
         <style>
           body {{ display:flex; flex-direction: column; margin:0;
-                  height:100vh; font-family: sans-serif; background:#f3f4f6; }}
-          pre {{ flex: 0 0 25%; overflow:auto; padding:15px; background:#111;
-                 color:#10b981; font-size:12px; border-bottom: 2px solid #374151; }}
-          .maps-row {{ display:flex; flex: 1; background: white; }}
-          iframe {{ width: {iframe_width}; height:100%; border:none;
-                    border-right: 1px solid #d1d5db; }}
+                  height:100vh; font-family:sans-serif;
+                  background:#f3f4f6; }}
+          pre {{ flex:0 0 25%; overflow:auto; padding:15px;
+                 background:#111; color:#10b981; font-size:12px;
+                 border-bottom:2px solid #374151; }}
+          .maps-row {{ display:flex; flex:1; background:white; }}
+          iframe {{ width:{iframe_width}; height:100%; border:none;
+                    border-right:1px solid #d1d5db; }}
         </style>
       </head>
       <body>
         <pre>{log_content}</pre>
-        <div class="maps-row">
-          <iframe src="/maps/{satellite_map}"></iframe>
-          <iframe src="/maps/{opera_map}"></iframe>
-          {drcs_iframe}
-        </div>
+        <div class="maps-row">{iframes}</div>
       </body>
     </html>
     """

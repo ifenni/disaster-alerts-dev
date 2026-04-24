@@ -94,7 +94,9 @@ class MapDashboardJS(MacroElement):
                     height: 34px;
                     cursor: pointer;
                     white-space: nowrap;
-                    min-width: 140px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    width: 140px;
                     text-align: left;
                     appearance: none;
                     -webkit-appearance: none;
@@ -294,6 +296,10 @@ class MapDashboardJS(MacroElement):
                     list.classList.toggle('open');
                 });
 
+                list.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+
                 checkboxes.forEach(function(cb) {
                     cb.addEventListener('change', function() {
                         if (cb === allBox && cb.checked) {
@@ -302,8 +308,23 @@ class MapDashboardJS(MacroElement):
                         } else if (cb !== allBox && cb.checked) {
                             allBox.checked = false;
                         }
+                        updateLabel();
                     });
                 });
+
+                function updateLabel() {
+                    if (allBox.checked) {
+                        btn.textContent = defaultLabel;
+                        return;
+                    }
+                    var selected = Array.from(checkboxes)
+                        .filter(function(c) {
+                            return c.checked && c !== allBox;
+                        })
+                        .map(function(c) { return c.value; });
+                    btn.textContent = selected.length
+                        ? selected.join(', ') : defaultLabel;
+                }
             }
 
             function getMultiValues(listId, allValue) {
